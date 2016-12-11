@@ -279,7 +279,18 @@ predictions <- as.data.frame(rbind(problemid, predtest))
 predictions
 ```
 
-## 10. Appendix
+## 10. Export prediction to a text file
+
+This command creates a one line text file containing the list of the 20 classes
+
+```{r}
+predTest <- as.vector(pred_test)
+df <- rbind(predTest)
+write.table(df, file = "pred_test.csv", sep = " ", col.names = FALSE, qmethod = "double", row.names=FALSE, quote = FALSE)
+```
+
+
+## 11. Appendix
 
 ### Packages used and versions
 
