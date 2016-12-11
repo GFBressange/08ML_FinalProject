@@ -2,7 +2,9 @@
 title: "Practical Machine Learning Final Course Project"
 author: "Georges Bressange"
 date: "10/12/2016"
-output: html_document
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -99,19 +101,19 @@ belt_var <- grep("(_belt)", colnames(training))
 length(belt_var)
 ```
 
-8. 38 variables relativ to "arm".
+8. 38 variables relative to "arm".
 
 ```{r}
 arm_var <- grep("(_arm)", colnames(training))
 length(arm_var)
 ```
-9. 38 variables relativ to "dumbbell".
+9. 38 variables relative to "dumbbell".
 
 ```{r}
 dumbbell_var <- grep("(_dumbbell)", colnames(training))
 length(dumbbell_var)
 ```
-10. 38 variables relativ to "forearm".
+10. 38 variables relative to "forearm".
 ```{r}
 forearm_var <- grep("(_forearm)", colnames(training))
 length(forearm_var)
