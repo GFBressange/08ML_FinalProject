@@ -1,5 +1,5 @@
 # 08ML_FinalProject
-Author: Goerges Bressange
+Author: Georges Bressange
 
 Final Project submission for Practical Machine Learning module 08 (Data Science Specialization)
 
