@@ -1,0 +1,298 @@
+---
+title: "Practical Machine Learning Final Course Project"
+author: "Georges Bressange"
+date: "10/12/2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Executive summary
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible 
+to collect a large amount of data about personal activity relatively 
+inexpensively. In this project, the goal was to use data from 
+accelerometers on the belt, forearm, arm, and dumbell of 6 participants to find 
+patterns in the behavior and quantify how well they do these exercises. 
+
+We fit a Random Forest model to predict the outcome **classe**. For this purpose, 
+we have not considered the variables with too many miising values. The training set 
+has been divided into a smaller training set and a validation set. 
+
+The cross-validation gives an excellent accuracy near 99% and an out-of-sample rate 
+inferior to 0.1%.
+
+We finally predict the **classe** outcome on the test set to validate our model. 
+
+## 2. The data: Human Activity Recognition
+
+The data for this project come from this 
+[source: ](http://groupware.les.inf.puc-rio.br/har)
+
+Six young health participants were asked to perform one set of 10 repetitions of 
+the Unilateral Dumbbell Biceps Curl in five different fashions: exactly 
+according to the specification (Class A), throwing the elbows to the front 
+(Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell 
+only halfway (Class D) and throwing the hips to the front (Class E).
+
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. 
+
+[Read more](http://groupware.les.inf.puc-rio.br/har#ixzz4STy1Xr50)
+
+## 3. Downloading and loading the data
+
+The following commands create a local **data** directory if it does not exist and download the files **training.csv** and **testing.csv** in this directory if these files are not already present.
+
+```{r}
+fileUrl1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileUrl2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("data")){
+dir.create("data")
+}
+if(!file.exists("./data/training.csv")) {
+        download.file(fileUrl1,destfile="./data/training.csv",method="curl")
+}
+if(!file.exists("./data/testing.csv")) {
+        download.file(fileUrl2,destfile="./data/testing.csv",method="curl")
+}
+list.files("./data")
+dateDownloaded <- date()
+dateDownloaded
+```
+
+We now import these csv files as data frames.
+
+```{r}
+training <- read.csv("data/training.csv", na.strings = c("NA", ""))
+testing <- read.csv("data/testing.csv", na.strings = c("NA", ""))
+```
+
+## 4. Description of the variables
+
+The data consist in 19622 observations of 160 variables. The variables 
+can be grouped in 10 groups (so far, a detailled codebook cannot be found).
+
+1. The variable **X**: an integer numbering the observations (from 1 to 19622)
+
+2. The variable **user_name** which is a factor variable giving the names of the 
+6 participants to this study (Adelmo, Carlitos, Charles, Eurico, Jeremy, Pedro).
+
+3. The two interger variables **raw_timestamp_part_1** and 
+**raw_timestamp_part_2**. It seems to correspond to time indexes.
+
+4. The variable **cvtd_timestamp** with indicates the date/time 
+
+5. The variables **new_window** and **num_window** : measurements are done 
+during a time window with different lengths from 0.5 to 2.5 seconds with 0.5 overlap. **new_window** indicates the change of window and **num_window** is counting the 
+windows.
+
+6. The classe of the performance: classe **A** indicates that the exercise was 
+correctly performed and classes **B** to **E** indicate exercices performed with 
+common mistakes.
+
+7. 38 variables relative to "belt".
+
+```{r}
+belt_var <- grep("(_belt)", colnames(training))
+length(belt_var)
+```
+
+8. 38 variables relativ to "arm".
+
+```{r}
+arm_var <- grep("(_arm)", colnames(training))
+length(arm_var)
+```
+9. 38 variables relativ to "dumbbell".
+
+```{r}
+dumbbell_var <- grep("(_dumbbell)", colnames(training))
+length(dumbbell_var)
+```
+10. 38 variables relativ to "forearm".
+```{r}
+forearm_var <- grep("(_forearm)", colnames(training))
+length(forearm_var)
+```
+
+## 5. Objective
+
+We would like to fit a model to predict the **classe** variable from the other 
+variables as predictors. In other words, we would like to predict how well the 
+human has performed the exercise knowing the different measures provided by the 
+sensors on his body.
+
+## 6. Cleaning the data
+
+We calculate the percentage of missing values for each variable:
+
+```{r}
+stat_na <- colMeans(is.na(training))
+table(round(stat_na,2))
+```
+
+We see that 100 of the 160 variables have near 98% of missing data. We decide to remove these variables.
+
+```{r}
+stat_na <- stat_na[stat_na == 0]
+names_na <- names(stat_na)
+trainingClean <- subset(training, select = names_na)
+dim(trainingClean)
+```
+
+We also remove the identification variable **X** and **user_name** the which play no role in this modelization.
+
+Moreover, we have not enough information to consider the time variables **raw_timestamp_part_1**, **raw_timestamp_part_2** and **cvtd_timestamp** to use them to build time series. We therefore remove them as well. The **new_window** and **num_window** are not necessary as well.
+ 
+The important fact is to know the association between the intensities of the various quantities measured by the sensors AND the classe of the performance. The other variables retain these associations.
+ 
+```{r}
+library(dplyr)
+trainingClean <- select(trainingClean, -c(X, user_name))
+trainingClean <- select(trainingClean, -c(raw_timestamp_part_1, raw_timestamp_part_2))
+trainingClean <- select(trainingClean, -c(cvtd_timestamp))
+trainingClean <- select(trainingClean, -c(new_window, num_window))
+dim(trainingClean)
+```
+
+We finally will use 53 variables: 52 variables as predictors to predict the outcome variable **classe**.
+
+## 7. Fitting a model
+
+We fisrt divide our training set **training** into a smaller training set and a cross-valisation set.
+
+```{r}
+library(caret)
+```
+
+We set seed to **32333** for reproductibility and create the two subsets:
+
+```{r}
+set.seed(32333)
+```
+
+```{r}
+inTrain <- createDataPartition(y = trainingClean$classe, p = 0.7, list = FALSE)
+```
+
+```{r}
+trainingClean_train <- trainingClean[inTrain, ]
+dim(trainingClean_train)
+```
+
+```{r}
+trainingClean_valid <- trainingClean[-inTrain, ]
+dim(trainingClean_valid)
+```
+
+We then train a Random Forest model by limiting the number of trees to **10**. 
+It has proved to give very good results and have a reasonalble time for the 
+calculations. Furthermore, cleaning the dataset by removing variables with 
+too many NA's avoided crashes in calculations in the search of the best models. 
+We first set a seed for reproductibilty purpose.
+
+```{r}
+set.seed(233)
+```
+
+```{r}
+ptm <- proc.time()
+modFit <- train(classe ~., data = trainingClean_train, method="rf", ntree = 10, type = "class")
+proc.time() - ptm
+```
+
+```{r}
+plot(modFit)
+```
+
+## 8. Cross-validation
+
+We now want to compute the accuracy of the prediction of our model **modFit**.
+We will use the cross-valisation set **trainingClean_valid**. 
+
+```{r}
+pred_valid <- predict(modFit, newdata = trainingClean_valid)
+```
+
+The Confusion Matrix of this prediction towards the values of the outcome **classe** in the **trainingClean_valid** set is:
+
+```{r}
+conf_mat_valid <- confusionMatrix(pred_valid, trainingClean_valid$classe)
+conf_mat_valid
+```
+
+```{r}
+CI_acc_low <- round(conf_mat_valid$overall[3],4)
+CI_acc_up <- round(conf_mat_valid$overall[4],4)
+```
+
+This shows that the 95% confidence interval of the accuracy is 
+$[`r CI_acc_low` , `r CI_acc_up` ]$, which is excellent. 
+
+The **out-of-sample error rate** is therefore in the intervalle 
+$[`r 1- CI_acc_low` , `r 1 - CI_acc_up`]$ at a 95% confidence level, and therefore is inferior to 0.02%.
+
+It is interesting to investigate the importance of the variables. 
+
+```{r}
+library(dplyr)
+Var_Imp_modFit <- as.data.frame(varImp(modFit)$importance)
+Var_Imp_modFit$Overall <- as.numeric(Var_Imp_modFit$Overall)
+Var_Imp_modFit <- mutate(Var_Imp_modFit, Variables = rownames(Var_Imp_modFit))
+Var_Imp_modFit <- arrange(Var_Imp_modFit, desc(Overall))
+head(Var_Imp_modFit)
+```
+
+## 9. Predicting classe on test data
+
+We now predict the outcome **classe** on test data **testing** provided. 
+We first perform the same cleaning as we did for **training**.
+
+```{r}
+stat_na <- colMeans(is.na(testing))
+stat_na <- stat_na[stat_na == 0]
+names_na <- names(stat_na)
+testingClean <- subset(testing, select = names_na)
+testingClean <- select(testingClean, -c(X, user_name))
+testingClean <- select(testingClean, -c(raw_timestamp_part_1, raw_timestamp_part_2))
+testingClean <- select(testingClean, -c(cvtd_timestamp))
+testingClean <- select(testingClean, -c(new_window, num_window))
+dim(testingClean)
+```
+
+We remark that the variable **classe** in the training set corresponds in the test set to the variable **problem_id**.
+
+We now predict the outcome **classe** from the test set by using our model **modFit**.
+
+```{r}
+pred_test <- predict(modFit, newdata = testingClean)
+pred_test
+```
+
+
+```{r}
+predtest <- as.character(pred_test)
+problemid <- testingClean$problem_id
+predictions <- as.data.frame(rbind(problemid, predtest))
+predictions
+```
+
+## 10. Appendix
+
+### Packages used and versions
+
+```{r}
+print(sessionInfo())
+```
+
+### References
+
+[source: ](http://groupware.les.inf.puc-rio.br/har)
+
+
+
+
+
+
